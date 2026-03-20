@@ -26,3 +26,11 @@ backend/Services/Ml/artifacts/*.joblib
 backend/Services/Ml/artifacts/*.json
 bert_service/models/*
 !bert_service/models/.gitkeep
+app-mras-api-prod-aue-logs*.zip
+appservice-logs/
+appservice-logs-2/
+webapp_logs*.zip
+webapp_logs_current/
+webapp_logs_history/
+webapp_logs_postrepair/
+webapp_logs_sqlfix/
