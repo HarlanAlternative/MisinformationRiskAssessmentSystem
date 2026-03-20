@@ -10,13 +10,15 @@ public sealed class AnalysisService(
     IFeatureEngineeringService featureEngineeringService,
     IClassicalModelClient classicalModelClient,
     IBertServiceClient bertServiceClient,
-    IHybridRiskScoringService hybridRiskScoringService) : IAnalysisService
+    IHybridRiskScoringService hybridRiskScoringService,
+    ILogger<AnalysisService> logger) : IAnalysisService
 {
     private readonly AppDbContext _dbContext = dbContext;
     private readonly IFeatureEngineeringService _featureEngineeringService = featureEngineeringService;
     private readonly IClassicalModelClient _classicalModelClient = classicalModelClient;
     private readonly IBertServiceClient _bertServiceClient = bertServiceClient;
     private readonly IHybridRiskScoringService _hybridRiskScoringService = hybridRiskScoringService;
+    private readonly ILogger<AnalysisService> _logger = logger;
 
     public async Task<AnalyzeResponse> AnalyzeAsync(AnalyzeRequest request, CancellationToken cancellationToken)
     {
@@ -42,8 +44,15 @@ public sealed class AnalysisService(
             CreatedAt = DateTime.UtcNow
         };
 
-        _dbContext.AnalysisResults.Add(result);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            _dbContext.AnalysisResults.Add(result);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist analysis result {ResultId}. Returning inference response without history persistence.", result.Id);
+        }
 
         return new AnalyzeResponse
         {
@@ -58,27 +67,44 @@ public sealed class AnalysisService(
 
     public async Task<IReadOnlyCollection<HistoryItemResponse>> GetHistoryAsync(CancellationToken cancellationToken)
     {
-        return await _dbContext.AnalysisResults
-            .AsNoTracking()
-            .OrderByDescending(item => item.CreatedAt)
-            .Take(50)
-            .Select(item => new HistoryItemResponse
-            {
-                Id = item.Id,
-                Title = item.Title,
-                RiskLevel = item.RiskLevel,
-                ConfidenceScore = item.ConfidenceScore,
-                Explanation = item.Explanation,
-                CreatedAt = item.CreatedAt
-            })
-            .ToListAsync(cancellationToken);
+        try
+        {
+            return await _dbContext.AnalysisResults
+                .AsNoTracking()
+                .OrderByDescending(item => item.CreatedAt)
+                .Take(50)
+                .Select(item => new HistoryItemResponse
+                {
+                    Id = item.Id,
+                    Title = item.Title,
+                    RiskLevel = item.RiskLevel,
+                    ConfidenceScore = item.ConfidenceScore,
+                    Explanation = item.Explanation,
+                    CreatedAt = item.CreatedAt
+                })
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load analysis history. Returning an empty collection.");
+            return [];
+        }
     }
 
     public async Task<AnalysisRecordResponse?> GetResultAsync(Guid id, CancellationToken cancellationToken)
     {
-        var item = await _dbContext.AnalysisResults
-            .AsNoTracking()
-            .FirstOrDefaultAsync(result => result.Id == id, cancellationToken);
+        AnalysisResult? item;
+        try
+        {
+            item = await _dbContext.AnalysisResults
+                .AsNoTracking()
+                .FirstOrDefaultAsync(result => result.Id == id, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load analysis result {ResultId}. Returning null.", id);
+            return null;
+        }
 
         if (item is null)
         {

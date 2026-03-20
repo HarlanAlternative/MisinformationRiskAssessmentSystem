@@ -6,15 +6,27 @@ namespace MisinformationRiskAssessment.Api.Controllers;
 
 [ApiController]
 [Route("api")]
-public sealed class AnalysisController(IAnalysisService analysisService) : ControllerBase
+public sealed class AnalysisController(IAnalysisService analysisService, ILogger<AnalysisController> logger) : ControllerBase
 {
     private readonly IAnalysisService _analysisService = analysisService;
+    private readonly ILogger<AnalysisController> _logger = logger;
 
     [HttpPost("analyze")]
     public async Task<ActionResult<AnalyzeResponse>> Analyze([FromBody] AnalyzeRequest request, CancellationToken cancellationToken)
     {
-        var result = await _analysisService.AnalyzeAsync(request, cancellationToken);
-        return Ok(result);
+        try
+        {
+            var result = await _analysisService.AnalyzeAsync(request, cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Analyze request failed for title '{Title}'.", request.Title);
+            return Problem(
+                title: "Analysis failed",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
     }
 
     [HttpGet("history")]
