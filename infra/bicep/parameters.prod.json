@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus2"
+    },
+    "projectName": {
+      "value": "mras"
+    },
+    "environmentName": {
+      "value": "prod"
+    },
+    "regionCode": {
+      "value": "eaus2"
+    },
+    "acrSku": {
+      "value": "Basic"
+    },
+    "backendContainerImage": {
+      "value": "acrmrasprodeaus2.azurecr.io/mras/backend:prod"
+    },
+    "bertContainerImage": {
+      "value": "acrmrasprodeaus2.azurecr.io/mras/bert-service:prod"
+    },
+    "frontendOrigin": {
+      "value": "https://placeholder.invalid"
+    },
+    "sqlAdminLogin": {
+      "value": "mrasadmin"
+    },
+    "sqlAdminPassword": {
+      "value": "ChangeThisBeforeDeployment!"
+    },
+    "sqlDatabaseSkuName": {
+      "value": "S0"
+    },
+    "sqlDatabaseSkuTier": {
+      "value": "Standard"
+    },
+    "appServicePlanSkuName": {
+      "value": "B1"
+    },
+    "appServicePlanSkuTier": {
+      "value": "Basic"
+    },
+    "bertCpu": {
+      "value": 1
+    },
+    "bertMemory": {
+      "value": "2Gi"
+    }
+  }
+}
