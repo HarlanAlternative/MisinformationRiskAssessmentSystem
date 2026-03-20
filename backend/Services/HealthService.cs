@@ -22,7 +22,16 @@ public sealed class HealthService(
 
         if (_dbContext.Database.IsRelational())
         {
-            checks["database"] = await _dbContext.Database.CanConnectAsync(cancellationToken) ? "healthy" : "unreachable";
+            if (!await _dbContext.Database.CanConnectAsync(cancellationToken))
+            {
+                checks["database"] = "unreachable";
+            }
+            else
+            {
+                checks["database"] = await DatabaseStartup.AnalysisResultsTableExistsAsync(_dbContext, cancellationToken)
+                    ? "healthy"
+                    : "schema-missing";
+            }
         }
         else
         {

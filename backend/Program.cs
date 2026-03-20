@@ -53,9 +53,10 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseStartup");
     if (dbContext.Database.IsRelational())
     {
-        dbContext.Database.Migrate();
+        await DatabaseStartup.InitializeAsync(dbContext, logger);
     }
 }
 
