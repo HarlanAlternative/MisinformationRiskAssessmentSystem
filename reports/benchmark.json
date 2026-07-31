@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-31T14:18:22.369843+00:00",
+  "generated_at": "2026-07-31T14:28:43.557962+00:00",
   "dataset": "LIAR",
   "evaluation_protocol": {
     "train_split": "train.tsv",
@@ -30,6 +30,21 @@
     "high_risk_threshold": 0.7
   },
   "record_count": 1267,
+  "artifact_provenance": {
+    "classical": {
+      "schema_version": 2,
+      "pipeline_fingerprint": "37cd9f0508b63335",
+      "trained_on": "train.tsv only"
+    },
+    "distilBert": {
+      "mode": "train",
+      "base_model": "distilbert-base-uncased",
+      "dataset_root": "data/liar",
+      "epochs": 2,
+      "batch_size": 8,
+      "max_length": 256
+    }
+  },
   "models": {
     "logisticRegression": {
       "accuracy": 0.6456,

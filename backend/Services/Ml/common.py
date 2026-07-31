@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import ast
+import hashlib
+import inspect
 import json
 import re
 import csv
+import textwrap
 from pathlib import Path
 from typing import Iterable
+
+# Bump when the artifact metrics.json layout changes. Artifacts written under an
+# older version cannot be validated and must be retrained.
+ARTIFACT_SCHEMA_VERSION = 2
 
 EMOTIONAL_WORDS = {
     "amazing",
@@ -170,3 +178,28 @@ def feature_names() -> list[str]:
         "exaggeration_count",
         "has_source",
     ]
+
+
+def pipeline_fingerprint() -> str:
+    """Hash the code that decides what a feature vector means.
+
+    Stored in the artifact metrics.json at training time and re-checked when the
+    artifacts are loaded for evaluation. If someone edits how records are parsed
+    or features are derived and does not retrain, the saved models no longer match
+    the code scoring them, and every number produced from them is silently wrong.
+    Comparing this hash turns that into a loud failure.
+
+    Sources are reduced to their AST, so comments and reformatting do not
+    invalidate otherwise identical artifacts.
+    """
+    parts: list[str] = []
+    for function in (normalize_text, compose_text, extract_rule_features, load_liar_records, feature_names):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+        parts.append(ast.dump(tree, annotate_fields=True, include_attributes=False))
+
+    parts.append(repr(sorted(LIAR_LABEL_MAP.items())))
+    parts.append(repr(sorted(EMOTIONAL_WORDS)))
+    parts.append(repr(sorted(EXAGGERATION_WORDS)))
+    parts.append(WORD_RE.pattern)
+
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]

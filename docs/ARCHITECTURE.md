@@ -138,6 +138,10 @@ The current base fusion formula is:
 
 These weights are configuration, not constants in the scoring service: they are read from `MachineLearning:HybridWeights` in `backend/appsettings.json`. The benchmark harness reads the same key, so the reported ensemble always matches the deployed one. `scripts/tune_hybrid_weights.py` selects them on `valid.tsv` alone; the test split is only ever touched by a single reporting run afterwards.
 
+### Artifact provenance
+
+Models are serialised separately from the code that builds their inputs, so a stale `.joblib` can be scored by a newer feature pipeline without anything visibly breaking — every resulting metric is then wrong, and wrong in a direction that flatters the model. Training therefore stamps `metrics.json` with a schema version and a fingerprint of the feature-pipeline source, and both the benchmark and the weight tuner refuse to run when the stamp does not match the current code. They likewise refuse a DistilBERT checkpoint still marked as the `pretrained` startup placeholder. These are hard failures rather than warnings: a warning on a long-running job is a number nobody re-reads.
+
 This weighted combination is then adjusted by small interpretable heuristics for factors such as:
 
 - missing source

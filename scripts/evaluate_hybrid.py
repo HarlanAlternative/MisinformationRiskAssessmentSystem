@@ -24,7 +24,13 @@ BERT_DIR = REPO_ROOT / "bert_service"
 if str(BERT_DIR) not in sys.path:
     sys.path.insert(0, str(BERT_DIR))
 
-from common import extract_rule_features, feature_matrix, load_liar_records  # noqa: E402
+from common import (  # noqa: E402
+    ARTIFACT_SCHEMA_VERSION,
+    extract_rule_features,
+    feature_matrix,
+    load_liar_records,
+    pipeline_fingerprint,
+)
 from data_utils import load_liar as load_liar_for_bert  # noqa: E402
 
 DEFAULT_DATASET_ROOT = REPO_ROOT / "data" / "liar"
@@ -37,6 +43,78 @@ DEFAULT_APPSETTINGS = REPO_ROOT / "backend" / "appsettings.json"
 TRUSTED_SOURCES = {"ap", "associated press", "bbc", "ft", "guardian", "nytimes", "reuters", "wsj"}
 
 DEFAULT_HYBRID_WEIGHTS = {"logisticRegression": 0.5, "randomForest": 0.3, "bert": 0.2}
+
+
+RETRAIN_HINT = "Retrain with backend/Services/Ml/train_classical_models.py before benchmarking."
+
+
+def verify_classical_artifacts(artifact_dir: Path) -> dict[str, object]:
+    """Refuse to benchmark classical artifacts that the current code did not produce.
+
+    The models are pickled separately from the code that builds their inputs, so
+    nothing stops a stale .joblib from being scored by a newer feature pipeline.
+    That mismatch is silent and every resulting metric is wrong, so it is checked
+    rather than assumed.
+    """
+    metrics_path = artifact_dir / "metrics.json"
+    if not metrics_path.exists():
+        raise SystemExit(
+            f"No metrics.json beside the model artifacts in '{artifact_dir}', so their provenance "
+            f"cannot be established. {RETRAIN_HINT}"
+        )
+
+    provenance = json.loads(metrics_path.read_text(encoding="utf-8")).get("artifact_provenance")
+    if not provenance:
+        raise SystemExit(
+            f"'{metrics_path}' carries no artifact_provenance block, so it predates provenance "
+            f"tracking and the artifacts beside it cannot be trusted. {RETRAIN_HINT}"
+        )
+
+    recorded_version = provenance.get("schema_version")
+    if recorded_version != ARTIFACT_SCHEMA_VERSION:
+        raise SystemExit(
+            f"Artifact schema version mismatch: artifacts report {recorded_version!r}, "
+            f"this code expects {ARTIFACT_SCHEMA_VERSION!r}. {RETRAIN_HINT}"
+        )
+
+    expected = pipeline_fingerprint()
+    recorded = provenance.get("pipeline_fingerprint")
+    if recorded != expected:
+        raise SystemExit(
+            "The feature pipeline has changed since these artifacts were trained "
+            f"(artifacts {recorded!r}, current code {expected!r}). Scoring them now would "
+            f"report numbers for models that no longer match the code building their inputs. {RETRAIN_HINT}"
+        )
+
+    return provenance
+
+
+def verify_bert_checkpoint(model_dir: Path, allow_placeholder: bool) -> dict[str, object]:
+    """Refuse to benchmark the SST-2 startup placeholder unless explicitly asked.
+
+    bert_service/train.py --mode pretrained installs a sentiment checkpoint so the
+    service can boot. It is unrelated to this task and scores below chance, so it
+    must not reach a benchmark table by accident.
+    """
+    info_path = model_dir / "model_info.json"
+    if not info_path.exists():
+        return {}
+
+    model_info = json.loads(info_path.read_text(encoding="utf-8"))
+    if model_info.get("mode") == "pretrained" and not allow_placeholder:
+        raise SystemExit(
+            f"The checkpoint in '{model_dir}' is the '{model_info.get('source_model')}' startup "
+            "placeholder, not a LIAR fine-tune. It is unrelated to this task and scores below "
+            "chance, so benchmarking it would publish a meaningless DistilBERT row. Fine-tune with "
+            "'bert_service/train.py --mode train', or pass --allow-placeholder-bert to benchmark it "
+            "deliberately."
+        )
+
+    # Recorded into a committed report, so keep machine-specific paths out of it.
+    if "dataset_root" in model_info:
+        model_info = {**model_info, "dataset_root": relative_to_repo(Path(model_info["dataset_root"]))}
+
+    return model_info
 
 
 def relative_to_repo(path: Path) -> str:
@@ -179,12 +257,23 @@ def main() -> None:
     parser.add_argument("--high-risk-threshold", type=float, default=0.70)
     parser.add_argument("--bert-batch-size", type=int, default=16)
     parser.add_argument("--bert-max-length", type=int, default=256)
+    parser.add_argument(
+        "--allow-placeholder-bert",
+        action="store_true",
+        help="Benchmark the SST-2 startup placeholder anyway. Only for demonstrating that it is broken.",
+    )
     args = parser.parse_args()
 
     report_dir = Path(args.report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
 
     hybrid_weights = load_hybrid_weights(Path(args.appsettings))
+
+    # Fail before doing any work, not after producing a plausible-looking table.
+    artifact_dir = Path(args.classical_artifact_dir)
+    bert_model_dir = Path(args.bert_model_dir)
+    classical_provenance = verify_classical_artifacts(artifact_dir)
+    bert_model_info = verify_bert_checkpoint(bert_model_dir, args.allow_placeholder_bert)
 
     records = [record for record in load_liar_records(args.dataset_root) if str(record.get("split")) == "test"]
     if not records:
@@ -207,7 +296,6 @@ def main() -> None:
         )
     bert_texts = [str(record["text"]) for record in bert_records]
 
-    artifact_dir = Path(args.classical_artifact_dir)
     vectorizer = joblib.load(artifact_dir / "tfidf_vectorizer.joblib")
     logistic = joblib.load(artifact_dir / "logistic_regression.joblib")
     random_forest = joblib.load(artifact_dir / "random_forest.joblib")
@@ -216,7 +304,6 @@ def main() -> None:
     logistic_scores = logistic.predict_proba(classical_features)[:, 1]
     random_forest_scores = random_forest.predict_proba(classical_features)[:, 1]
 
-    bert_model_dir = Path(args.bert_model_dir)
     tokenizer = AutoTokenizer.from_pretrained(str(bert_model_dir))
     bert_model = AutoModelForSequenceClassification.from_pretrained(str(bert_model_dir))
     bert_model.eval()
@@ -337,6 +424,10 @@ def main() -> None:
             "high_risk_threshold": args.high_risk_threshold,
         },
         "record_count": len(records),
+        "artifact_provenance": {
+            "classical": classical_provenance,
+            "distilBert": bert_model_info,
+        },
         "models": model_metrics,
         "hybrid_risk_distribution": risk_level_counts,
         "comparison_table": comparison_rows,

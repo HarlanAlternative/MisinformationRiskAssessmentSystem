@@ -36,7 +36,11 @@ for extra_path in (ML_DIR, BERT_DIR):
 
 from common import extract_rule_features, feature_matrix, load_liar_records  # noqa: E402
 from data_utils import load_liar as load_liar_for_bert  # noqa: E402
-from evaluate_hybrid import hybrid_adjustment  # noqa: E402
+from evaluate_hybrid import (  # noqa: E402
+    hybrid_adjustment,
+    verify_bert_checkpoint,
+    verify_classical_artifacts,
+)
 
 TUNING_SPLIT = "valid"
 
@@ -115,6 +119,10 @@ def main() -> None:
         help="Validation metric maximised by the grid search. ROC AUC is threshold-free and the most stable.",
     )
     args = parser.parse_args()
+
+    # Weights tuned against stale artifacts would be applied to different models.
+    verify_classical_artifacts(Path(args.classical_artifact_dir))
+    verify_bert_checkpoint(Path(args.bert_model_dir), allow_placeholder=False)
 
     records = [r for r in load_liar_records(args.dataset_root) if str(r.get("split")) == TUNING_SPLIT]
     bert_records = [r for r in load_liar_for_bert(args.dataset_root) if str(r.get("split")) == TUNING_SPLIT]

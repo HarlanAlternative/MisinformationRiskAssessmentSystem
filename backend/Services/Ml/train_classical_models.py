@@ -13,7 +13,14 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
 
-from common import LIAR_LABEL_MAP, feature_matrix, feature_names, load_liar_records
+from common import (
+    ARTIFACT_SCHEMA_VERSION,
+    LIAR_LABEL_MAP,
+    feature_matrix,
+    feature_names,
+    load_liar_records,
+    pipeline_fingerprint,
+)
 
 DEFAULT_DATASET_ROOT = Path(__file__).resolve().parents[3] / "data" / "liar"
 
@@ -142,6 +149,11 @@ def main() -> None:
     metrics = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "dataset": "LIAR",
+        "artifact_provenance": {
+            "schema_version": ARTIFACT_SCHEMA_VERSION,
+            "pipeline_fingerprint": pipeline_fingerprint(),
+            "trained_on": "train.tsv only",
+        },
         "evaluation_protocol": {
             "train_split": "train.tsv",
             "validation_split": "valid.tsv",

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-31T14:16:56.417573+00:00",
+  "generated_at": "2026-07-31T14:29:06.362163+00:00",
   "dataset": "LIAR",
   "tuning_split": "valid.tsv",
   "note": "Weights selected on the validation split only. The test split is never read by this script; run scripts/evaluate_hybrid.py once afterwards for reported test metrics.",
