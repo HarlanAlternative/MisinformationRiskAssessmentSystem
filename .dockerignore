@@ -16,3 +16,11 @@ backend/bin
 backend/obj
 bert_service/.pytest_cache
 data/liar
+
+# Model artifacts are untracked, so a local build context holds them but a CI
+# checkout does not. Leaving them in means images built here quietly differ from
+# images built by a workflow. They enter the image only via the release bundle
+# fetched in the artifacts stage, so exclude them from the context entirely.
+bert_service/models
+backend/Services/Ml/artifacts
+dist

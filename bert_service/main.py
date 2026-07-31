@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -34,22 +35,68 @@ class State:
 state = State()
 
 
+def env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def describe_checkpoint(model_dir: Path) -> str:
+    """Report whether a local checkpoint is a LIAR fine-tune or the SST-2 placeholder."""
+    info_path = model_dir / "model_info.json"
+    if not info_path.exists():
+        return "local"
+
+    try:
+        mode = json.loads(info_path.read_text(encoding="utf-8")).get("mode")
+    except (OSError, ValueError):
+        return "local"
+
+    return "placeholder" if mode == "pretrained" else "local"
+
+
 def choose_model_reference() -> str:
+    """Resolve the checkpoint to serve, refusing to quietly substitute a wrong one.
+
+    This used to fall back to a sentiment model when no checkpoint was present,
+    which meant a deployment with an empty model directory came up healthy and
+    served scores from a model that has nothing to do with misinformation. An
+    absent checkpoint is now a startup failure.
+    """
     default_local_dir = Path(__file__).resolve().parent / "models" / "distilbert-liar"
     configured_dir = Path(os.getenv("BERT_MODEL_DIR", str(default_local_dir)))
     configured_name = os.getenv("BERT_MODEL_NAME")
-    fallback_name = os.getenv("BERT_FALLBACK_MODEL_NAME", "distilbert-base-uncased-finetuned-sst-2-english")
 
     if configured_dir.exists() and (configured_dir / "config.json").exists():
-        state.model_source = "local"
+        state.model_source = describe_checkpoint(configured_dir)
+        if state.model_source == "placeholder":
+            print(
+                f"WARNING: '{configured_dir}' holds the SST-2 startup placeholder, not a LIAR "
+                "fine-tune. Scores from it are meaningless for this task. Build the checkpoint "
+                "with 'python train.py --mode train'.",
+                flush=True,
+            )
         return str(configured_dir)
 
     if configured_name:
         state.model_source = "configured"
         return configured_name
 
-    state.model_source = "fallback"
-    return fallback_name
+    if env_flag("BERT_ALLOW_PLACEHOLDER_FALLBACK"):
+        state.model_source = "placeholder-fallback"
+        fallback_name = os.getenv("BERT_FALLBACK_MODEL_NAME", "distilbert-base-uncased-finetuned-sst-2-english")
+        print(
+            f"WARNING: no checkpoint at '{configured_dir}'. Falling back to '{fallback_name}', a "
+            "sentiment model unrelated to this task, because BERT_ALLOW_PLACEHOLDER_FALLBACK is set.",
+            flush=True,
+        )
+        return fallback_name
+
+    raise RuntimeError(
+        f"No DistilBERT checkpoint found at '{configured_dir}'. The service will not start with a "
+        "substitute model, because serving one silently reports misinformation scores from a model "
+        "that never learned the task. Provide the fine-tuned checkpoint (see scripts/package_artifacts.py "
+        "and the container build), set BERT_MODEL_NAME to a specific model, or set "
+        "BERT_ALLOW_PLACEHOLDER_FALLBACK=true to accept the SST-2 placeholder deliberately."
+    )
 
 
 def compose_text(title: str, content: str | None, source: str | None) -> str:
