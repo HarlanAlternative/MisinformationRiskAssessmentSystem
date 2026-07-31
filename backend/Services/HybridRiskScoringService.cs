@@ -19,10 +19,11 @@ public sealed class HybridRiskScoringService(
         ClassicalPredictionResult classicalPrediction,
         BertPredictionResult bertPrediction)
     {
+        var weights = _options.HybridWeights;
         var weightedScore =
-            (0.5 * classicalPrediction.LogisticScore) +
-            (0.3 * classicalPrediction.RandomForestScore) +
-            (0.2 * bertPrediction.Score);
+            (weights.LogisticRegression * classicalPrediction.LogisticScore) +
+            (weights.RandomForest * classicalPrediction.RandomForestScore) +
+            (weights.Bert * bertPrediction.Score);
 
         var adjustment = 0d;
         var explanationFragments = new List<string>();

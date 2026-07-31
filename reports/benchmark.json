@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-31T04:26:23.491868+00:00",
+  "generated_at": "2026-07-31T14:18:22.369843+00:00",
   "dataset": "LIAR",
   "evaluation_protocol": {
     "train_split": "train.tsv",
@@ -19,7 +19,13 @@
     "score_threshold": 0.5
   },
   "hybrid_scoring": {
-    "formula": "0.5 * Logistic Regression + 0.3 * Random Forest + 0.2 * DistilBERT",
+    "formula": "0 * Logistic Regression + 0.55 * Random Forest + 0.45 * DistilBERT",
+    "weights": {
+      "logisticRegression": 0.0,
+      "randomForest": 0.55,
+      "bert": 0.45
+    },
+    "weights_source": "backend/appsettings.json",
     "medium_risk_threshold": 0.35,
     "high_risk_threshold": 0.7
   },
@@ -42,26 +48,26 @@
       "roc_auc": 0.6947
     },
     "distilBert": {
-      "accuracy": 0.5099,
-      "precision": 0.3607,
-      "recall": 0.1591,
-      "f1": 0.2208,
+      "accuracy": 0.6709,
+      "precision": 0.6423,
+      "recall": 0.5552,
+      "f1": 0.5955,
       "threshold": 0.5,
-      "roc_auc": 0.4301
+      "roc_auc": 0.7178
     },
     "hybrid": {
-      "accuracy": 0.6196,
-      "precision": 0.5847,
-      "recall": 0.443,
-      "f1": 0.5041,
+      "accuracy": 0.6669,
+      "precision": 0.6267,
+      "recall": 0.5859,
+      "f1": 0.6056,
       "threshold": 0.5,
-      "roc_auc": 0.6599
+      "roc_auc": 0.7258
     }
   },
   "hybrid_risk_distribution": {
-    "Low": 319,
-    "Medium": 900,
-    "High": 48
+    "Low": 381,
+    "Medium": 734,
+    "High": 152
   },
   "comparison_table": [
     {
@@ -82,19 +88,19 @@
     },
     {
       "Model": "DistilBERT",
-      "Accuracy": 0.5099,
-      "Precision": 0.3607,
-      "Recall": 0.1591,
-      "F1": 0.2208,
-      "ROC_AUC": 0.4301
+      "Accuracy": 0.6709,
+      "Precision": 0.6423,
+      "Recall": 0.5552,
+      "F1": 0.5955,
+      "ROC_AUC": 0.7178
     },
     {
       "Model": "Hybrid",
-      "Accuracy": 0.6196,
-      "Precision": 0.5847,
-      "Recall": 0.443,
-      "F1": 0.5041,
-      "ROC_AUC": 0.6599
+      "Accuracy": 0.6669,
+      "Precision": 0.6267,
+      "Recall": 0.5859,
+      "F1": 0.6056,
+      "ROC_AUC": 0.7258
     }
   ]
 }

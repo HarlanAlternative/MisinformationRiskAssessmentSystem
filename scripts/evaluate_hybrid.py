@@ -20,14 +20,60 @@ ML_DIR = REPO_ROOT / "backend" / "Services" / "Ml"
 if str(ML_DIR) not in sys.path:
     sys.path.insert(0, str(ML_DIR))
 
+BERT_DIR = REPO_ROOT / "bert_service"
+if str(BERT_DIR) not in sys.path:
+    sys.path.insert(0, str(BERT_DIR))
+
 from common import extract_rule_features, feature_matrix, load_liar_records  # noqa: E402
+from data_utils import load_liar as load_liar_for_bert  # noqa: E402
 
 DEFAULT_DATASET_ROOT = REPO_ROOT / "data" / "liar"
 DEFAULT_CLASSICAL_ARTIFACT_DIR = REPO_ROOT / "backend" / "Services" / "Ml" / "artifacts"
 DEFAULT_BERT_MODEL_DIR = REPO_ROOT / "bert_service" / "models" / "distilbert-liar"
 DEFAULT_REPORT_DIR = REPO_ROOT / "reports"
 
+DEFAULT_APPSETTINGS = REPO_ROOT / "backend" / "appsettings.json"
+
 TRUSTED_SOURCES = {"ap", "associated press", "bbc", "ft", "guardian", "nytimes", "reuters", "wsj"}
+
+DEFAULT_HYBRID_WEIGHTS = {"logisticRegression": 0.5, "randomForest": 0.3, "bert": 0.2}
+
+
+def relative_to_repo(path: Path) -> str:
+    """Repo-relative path, so committed reports carry no machine-specific paths."""
+    try:
+        return path.resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def load_hybrid_weights(appsettings_path: Path) -> dict[str, float]:
+    """Read the ensemble weights the .NET scoring service uses.
+
+    backend/appsettings.json is the single source of truth, so this benchmark
+    cannot report a weighting that production is not applying.
+    """
+    if not appsettings_path.exists():
+        raise SystemExit(
+            f"Hybrid weights configuration not found at '{appsettings_path}'. "
+            "The benchmark reads MachineLearning:HybridWeights so that it matches the .NET service."
+        )
+
+    settings = json.loads(appsettings_path.read_text(encoding="utf-8-sig"))
+    configured = settings.get("MachineLearning", {}).get("HybridWeights", {})
+    weights = {
+        "logisticRegression": float(configured.get("LogisticRegression", DEFAULT_HYBRID_WEIGHTS["logisticRegression"])),
+        "randomForest": float(configured.get("RandomForest", DEFAULT_HYBRID_WEIGHTS["randomForest"])),
+        "bert": float(configured.get("Bert", DEFAULT_HYBRID_WEIGHTS["bert"])),
+    }
+
+    total = sum(weights.values())
+    if abs(total - 1.0) > 1e-6:
+        raise SystemExit(
+            f"MachineLearning:HybridWeights in '{appsettings_path}' sum to {total:.4f}, expected 1.0."
+        )
+
+    return weights
 
 
 def build_sparse_matrix(vectorizer, texts: list[str], numeric_rows: list[list[float]]):
@@ -123,6 +169,11 @@ def main() -> None:
     parser.add_argument("--classical-artifact-dir", default=str(DEFAULT_CLASSICAL_ARTIFACT_DIR))
     parser.add_argument("--bert-model-dir", default=str(DEFAULT_BERT_MODEL_DIR))
     parser.add_argument("--report-dir", default=str(DEFAULT_REPORT_DIR))
+    parser.add_argument(
+        "--appsettings",
+        default=str(DEFAULT_APPSETTINGS),
+        help="Backend configuration supplying MachineLearning:HybridWeights.",
+    )
     parser.add_argument("--score-threshold", type=float, default=0.5)
     parser.add_argument("--medium-risk-threshold", type=float, default=0.35)
     parser.add_argument("--high-risk-threshold", type=float, default=0.70)
@@ -133,6 +184,8 @@ def main() -> None:
     report_dir = Path(args.report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
 
+    hybrid_weights = load_hybrid_weights(Path(args.appsettings))
+
     records = [record for record in load_liar_records(args.dataset_root) if str(record.get("split")) == "test"]
     if not records:
         raise SystemExit("No LIAR test records were found for benchmark evaluation.")
@@ -140,6 +193,19 @@ def main() -> None:
     labels = np.asarray([int(record["label"]) for record in records], dtype=np.int64)
     texts = [str(record["text"]) for record in records]
     numeric_rows = feature_matrix(records)
+
+    # DistilBERT is fine-tuned on the " [SEP] "-delimited composition built by
+    # bert_service/data_utils.py, so it must be scored on that same composition
+    # rather than on the space-joined text the classical models use. Both loaders
+    # walk the same rows in the same order; the assertion keeps them honest.
+    bert_records = [record for record in load_liar_for_bert(args.dataset_root) if str(record.get("split")) == "test"]
+    if len(bert_records) != len(records) or [int(r["label"]) for r in bert_records] != labels.tolist():
+        raise SystemExit(
+            "LIAR loaders disagree on the test split: "
+            f"classical={len(records)} rows, bert={len(bert_records)} rows. "
+            "backend/Services/Ml/common.py and bert_service/data_utils.py must stay row-aligned."
+        )
+    bert_texts = [str(record["text"]) for record in bert_records]
 
     artifact_dir = Path(args.classical_artifact_dir)
     vectorizer = joblib.load(artifact_dir / "tfidf_vectorizer.joblib")
@@ -158,9 +224,8 @@ def main() -> None:
     bert_scores_list: list[float] = []
     with torch.no_grad():
         for start in range(0, len(records), args.bert_batch_size):
-            batch_records = records[start : start + args.bert_batch_size]
             encoded = tokenizer(
-                [record["text"] for record in batch_records],
+                bert_texts[start : start + args.bert_batch_size],
                 truncation=True,
                 padding=True,
                 max_length=args.bert_max_length,
@@ -182,9 +247,9 @@ def main() -> None:
             str(record.get("source") or ""),
         )
         weighted_score = (
-            (0.5 * float(logistic_scores[index]))
-            + (0.3 * float(random_forest_scores[index]))
-            + (0.2 * float(bert_scores[index]))
+            (hybrid_weights["logisticRegression"] * float(logistic_scores[index]))
+            + (hybrid_weights["randomForest"] * float(random_forest_scores[index]))
+            + (hybrid_weights["bert"] * float(bert_scores[index]))
         )
         final_score = min(1.0, max(0.0, weighted_score + hybrid_adjustment(record, features)))
         hybrid_scores_list.append(final_score)
@@ -261,7 +326,13 @@ def main() -> None:
             "score_threshold": args.score_threshold,
         },
         "hybrid_scoring": {
-            "formula": "0.5 * Logistic Regression + 0.3 * Random Forest + 0.2 * DistilBERT",
+            "formula": (
+                f"{hybrid_weights['logisticRegression']:g} * Logistic Regression"
+                f" + {hybrid_weights['randomForest']:g} * Random Forest"
+                f" + {hybrid_weights['bert']:g} * DistilBERT"
+            ),
+            "weights": hybrid_weights,
+            "weights_source": relative_to_repo(Path(args.appsettings)),
             "medium_risk_threshold": args.medium_risk_threshold,
             "high_risk_threshold": args.high_risk_threshold,
         },
