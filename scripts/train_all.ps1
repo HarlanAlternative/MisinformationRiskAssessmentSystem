@@ -88,7 +88,10 @@ $VenvDir = if ($env:VENV_DIR) { $env:VENV_DIR } else { Join-Path $RootDir ".venv
 $DatasetRoot = if ($env:DATASET_ROOT) { $env:DATASET_ROOT } else { Join-Path $RootDir "data\liar" }
 $ClassicalArtifactDir = if ($env:CLASSICAL_ARTIFACT_DIR) { $env:CLASSICAL_ARTIFACT_DIR } else { Join-Path $RootDir "backend\Services\Ml\artifacts" }
 $BertOutputDir = if ($env:BERT_OUTPUT_DIR) { $env:BERT_OUTPUT_DIR } else { Join-Path $RootDir "bert_service\models\distilbert-liar" }
-$BertSetupMode = if ($env:BERT_SETUP_MODE) { $env:BERT_SETUP_MODE } else { "pretrained" }
+# 'train' fine-tunes DistilBERT on LIAR. Set BERT_SETUP_MODE=pretrained for a fast
+# setup, but note that mode installs an SST-2 sentiment checkpoint as a placeholder,
+# which scores below chance on this task and must not be benchmarked.
+$BertSetupMode = if ($env:BERT_SETUP_MODE) { $env:BERT_SETUP_MODE } else { "train" }
 $TempDir = Join-Path $RootDir ".tmp"
 $PipCacheDir = Join-Path $RootDir ".pip-cache"
 $NpmCacheDir = Join-Path $RootDir ".npm-cache"

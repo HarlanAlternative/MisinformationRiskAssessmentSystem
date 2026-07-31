@@ -131,10 +131,12 @@ This supports:
 The current base fusion formula is:
 
 ```text
-0.5 * Logistic Regression
-+ 0.3 * Random Forest
-+ 0.2 * DistilBERT
+0.00 * Logistic Regression
++ 0.55 * Random Forest
++ 0.45 * DistilBERT
 ```
+
+These weights are configuration, not constants in the scoring service: they are read from `MachineLearning:HybridWeights` in `backend/appsettings.json`. The benchmark harness reads the same key, so the reported ensemble always matches the deployed one. `scripts/tune_hybrid_weights.py` selects them on `valid.tsv` alone; the test split is only ever touched by a single reporting run afterwards.
 
 This weighted combination is then adjusted by small interpretable heuristics for factors such as:
 
@@ -187,7 +189,7 @@ The recommended local flow is:
 3. install frontend dependencies
 4. prepare the LIAR dataset
 5. train classical artifacts
-6. prepare a local DistilBERT checkpoint
+6. fine-tune the DistilBERT checkpoint on LIAR (`bert_service/train.py --mode train`)
 7. start `bert_service`
 8. start backend
 9. start frontend

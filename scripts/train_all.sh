@@ -29,7 +29,10 @@ VENV_DIR="${VENV_DIR:-$ROOT_DIR/.venv}"
 DATASET_ROOT="${DATASET_ROOT:-$ROOT_DIR/data/liar}"
 CLASSICAL_ARTIFACT_DIR="${CLASSICAL_ARTIFACT_DIR:-$ROOT_DIR/backend/Services/Ml/artifacts}"
 BERT_OUTPUT_DIR="${BERT_OUTPUT_DIR:-$ROOT_DIR/bert_service/models/distilbert-liar}"
-BERT_SETUP_MODE="${BERT_SETUP_MODE:-pretrained}"
+# 'train' fine-tunes DistilBERT on LIAR. Set BERT_SETUP_MODE=pretrained for a fast
+# setup, but note that mode installs an SST-2 sentiment checkpoint as a placeholder,
+# which scores below chance on this task and must not be benchmarked.
+BERT_SETUP_MODE="${BERT_SETUP_MODE:-train}"
 TMPDIR="${TMPDIR:-$ROOT_DIR/.tmp}"
 PIP_CACHE_DIR="${PIP_CACHE_DIR:-$ROOT_DIR/.pip-cache}"
 npm_config_cache="${npm_config_cache:-$ROOT_DIR/.npm-cache}"
