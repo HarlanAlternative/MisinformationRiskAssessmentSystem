@@ -1,5 +1,11 @@
 name: backend-container
 
+# Builds the backend image and publishes it to GitHub Container Registry.
+#
+# Deployment is deliberately not part of this workflow. Authenticating a workflow
+# to Azure needs a service principal, and the tenant this subscription lives in
+# sets allowedToCreateApps to false, so one cannot be created. Deployment is a
+# manual step against a local az login instead: scripts/deploy_azure.ps1.
 on:
   push:
     branches:
@@ -7,57 +13,66 @@ on:
     paths:
       - 'backend/**'
       - 'docker-compose.yml'
-      - 'backend/Dockerfile'
+      - '.github/workflows/backend-container.yml'
+  workflow_dispatch:
+    inputs:
+      artifact_release_tag:
+        description: 'Release tag holding the model artifact bundles'
+        required: false
+        default: 'artifacts-v1'
 
 permissions:
   contents: read
-  id-token: write
+  packages: write
 
 env:
-  IMAGE_NAME: mras/backend
+  REGISTRY: ghcr.io
+  DEFAULT_ARTIFACT_TAG: artifacts-v1
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: ACR login
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      - name: Compute image tag
+      - name: Resolve image name and artifact tag
         id: meta
         shell: bash
-        run: echo "image_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Build backend image
         run: |
-          docker build \
-            -f backend/Dockerfile \
-            -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.image_tag }} \
-            .
+          owner="${{ github.repository_owner }}"
+          echo "image=${REGISTRY}/${owner,,}/mras-backend" >> "$GITHUB_OUTPUT"
+          echo "artifact_tag=${{ inputs.artifact_release_tag || env.DEFAULT_ARTIFACT_TAG }}" >> "$GITHUB_OUTPUT"
 
-      - name: Push backend image
-        run: |
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.image_tag }}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update backend web app container
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          build-args: |
+            ARTIFACT_REPO=${{ github.repository }}
+            ARTIFACT_RELEASE_TAG=${{ steps.meta.outputs.artifact_tag }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+
+      - name: Summary
+        shell: bash
         run: |
-          az webapp config container set \
-            --name "${{ secrets.BACKEND_WEBAPP_NAME }}" \
-            --resource-group "${{ secrets.BACKEND_RESOURCE_GROUP }}" \
-            --docker-custom-image-name "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.image_tag }}" \
-            --docker-registry-server-url "https://${{ secrets.ACR_LOGIN_SERVER }}" \
-            --docker-registry-server-user "${{ secrets.ACR_USERNAME }}" \
-            --docker-registry-server-password "${{ secrets.ACR_PASSWORD }}"
+          {
+            echo "### Backend image published"
+            echo ""
+            echo "- \`${{ steps.meta.outputs.image }}:${{ github.sha }}\`"
+            echo "- Model artifacts from release \`${{ steps.meta.outputs.artifact_tag }}\`"
+            echo ""
+            echo "Deploy with \`scripts/deploy_azure.ps1\`."
+          } >> "$GITHUB_STEP_SUMMARY"
