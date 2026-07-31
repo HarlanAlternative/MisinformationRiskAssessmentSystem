@@ -1,0 +1,100 @@
+{
+  "generated_at": "2026-07-31T04:26:23.491868+00:00",
+  "dataset": "LIAR",
+  "evaluation_protocol": {
+    "train_split": "train.tsv",
+    "validation_split": "valid.tsv",
+    "test_split": "test.tsv",
+    "benchmark_split": "test.tsv",
+    "label_mapping": {
+      "true": 0,
+      "mostly-true": 0,
+      "half-true": 0,
+      "barely-true": 1,
+      "false": 1,
+      "pants-fire": 1
+    },
+    "positive_class": 1,
+    "positive_class_meaning": "misinformation-risk label (barely-true / false / pants-fire)",
+    "score_threshold": 0.5
+  },
+  "hybrid_scoring": {
+    "formula": "0.5 * Logistic Regression + 0.3 * Random Forest + 0.2 * DistilBERT",
+    "medium_risk_threshold": 0.35,
+    "high_risk_threshold": 0.7
+  },
+  "record_count": 1267,
+  "models": {
+    "logisticRegression": {
+      "accuracy": 0.6456,
+      "precision": 0.5952,
+      "recall": 0.5877,
+      "f1": 0.5914,
+      "threshold": 0.5,
+      "roc_auc": 0.6957
+    },
+    "randomForest": {
+      "accuracy": 0.6582,
+      "precision": 0.6255,
+      "recall": 0.5407,
+      "f1": 0.58,
+      "threshold": 0.5,
+      "roc_auc": 0.6947
+    },
+    "distilBert": {
+      "accuracy": 0.5099,
+      "precision": 0.3607,
+      "recall": 0.1591,
+      "f1": 0.2208,
+      "threshold": 0.5,
+      "roc_auc": 0.4301
+    },
+    "hybrid": {
+      "accuracy": 0.6196,
+      "precision": 0.5847,
+      "recall": 0.443,
+      "f1": 0.5041,
+      "threshold": 0.5,
+      "roc_auc": 0.6599
+    }
+  },
+  "hybrid_risk_distribution": {
+    "Low": 319,
+    "Medium": 900,
+    "High": 48
+  },
+  "comparison_table": [
+    {
+      "Model": "Logistic Regression",
+      "Accuracy": 0.6456,
+      "Precision": 0.5952,
+      "Recall": 0.5877,
+      "F1": 0.5914,
+      "ROC_AUC": 0.6957
+    },
+    {
+      "Model": "Random Forest",
+      "Accuracy": 0.6582,
+      "Precision": 0.6255,
+      "Recall": 0.5407,
+      "F1": 0.58,
+      "ROC_AUC": 0.6947
+    },
+    {
+      "Model": "DistilBERT",
+      "Accuracy": 0.5099,
+      "Precision": 0.3607,
+      "Recall": 0.1591,
+      "F1": 0.2208,
+      "ROC_AUC": 0.4301
+    },
+    {
+      "Model": "Hybrid",
+      "Accuracy": 0.6196,
+      "Precision": 0.5847,
+      "Recall": 0.443,
+      "F1": 0.5041,
+      "ROC_AUC": 0.6599
+    }
+  ]
+}

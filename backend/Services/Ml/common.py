@@ -117,18 +117,10 @@ def load_liar_records(dataset_root: str | Path) -> list[dict[str, object]]:
                 party = normalize_text(row[7])
                 context = normalize_text(row[13])
 
-                past_counts = [normalize_text(value) for value in row[8:13]]
-                count_summary = " ".join(
-                    [
-                        f"barely_true_count {past_counts[0]}",
-                        f"false_count {past_counts[1]}",
-                        f"half_true_count {past_counts[2]}",
-                        f"mostly_true_count {past_counts[3]}",
-                        f"pants_fire_count {past_counts[4]}",
-                    ]
-                )
-
-                content = normalize_text(" ".join(part for part in [subject, context, speaker_job, state_info, count_summary] if part))
+                # LIAR columns 8-12 are the speaker's credit-history counts. They are
+                # tallied *including* the current statement, so the row's own label is
+                # recoverable from them. Excluded from the model input as label leakage.
+                content = normalize_text(" ".join(part for part in [subject, context, speaker_job, state_info] if part))
                 source = normalize_text(" ".join(part for part in [speaker, party] if part))
 
                 if not title:
