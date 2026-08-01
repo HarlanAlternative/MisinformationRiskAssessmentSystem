@@ -70,9 +70,15 @@ function Set-ContainerApp {
         [string]$Memory = "2.0Gi"
     )
 
-    $exists = & az containerapp show --name $Name --resource-group $ResourceGroup --query "name" -o tsv 2>$null
+    # Deliberately a list rather than a show. 'az containerapp show' writes to
+    # stderr when the app is absent, which PowerShell turns into a terminating
+    # error under ErrorActionPreference Stop - so the very check for "does this
+    # exist yet" would abort the first run. A list returns empty and exits 0.
+    $existing = Invoke-Az @(
+        "containerapp", "list", "--resource-group", $ResourceGroup, "--query", "[].name", "-o", "tsv"
+    )
 
-    if ($exists) {
+    if ($existing -contains $Name) {
         Write-Host "Updating $Name ..."
         $arguments = @(
             "containerapp", "update",
@@ -119,9 +125,13 @@ $bertFqdn = Invoke-Az @(
 )
 Write-Host "  BERT internal FQDN: $bertFqdn"
 
+# https, not http. Container Apps ingress defaults to allowInsecure false, so an
+# http call is answered with a redirect; HttpClient follows it but downgrades the
+# POST to a GET, and /predict then returns 405. Health checks still passed because
+# a redirected GET is still a GET, so this only surfaced on a real analysis.
 Set-ContainerApp -Name "mras-backend" -Image $BackendImage -TargetPort 5000 -Ingress "external" `
     -EnvVars @(
-        "BertService__Url=http://$bertFqdn",
+        "BertService__Url=https://$bertFqdn",
         "ASPNETCORE_URLS=http://+:5000",
         "MachineLearning__PythonExecutable=/opt/backend-venv/bin/python"
     )

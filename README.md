@@ -215,18 +215,31 @@ Outputs:
 
 ## Azure and Infra
 
-The repository includes Azure-oriented infrastructure and deployment assets:
+The deployed architecture runs both services as Azure Container Apps scaled to zero, with images published to GitHub Container Registry:
 
-- Bicep templates under `infra/bicep/`
-- GitHub Actions under `.github/workflows/`
-- containerized backend and BERT services
-
-The implemented target architecture is:
-
+- backend and bert_service on Azure Container Apps, `min-replicas 0`
+- images on `ghcr.io`, built by the workflows in `.github/workflows/`
 - frontend on Azure Static Web Apps
-- backend on Azure App Service for Containers
-- bert_service on Azure Container Apps
-- persistence on Azure SQL Database
+- persistence falls back to in-memory unless a connection string is configured
+
+This shape was chosen for cost. Azure Container Registry has no free tier, and the free App Service plan cannot host containers at all, so the original ACR plus App Service B1 arrangement carried a standing charge of roughly USD 18 a month. Public images on ghcr.io are free, and Container Apps scaled to zero cost nothing while idle.
+
+### Building and deploying
+
+Images build automatically on push. Each workflow fetches the model bundles from the artifact release and verifies them against their manifests, so an image cannot be published with weights that do not match the recorded fingerprint.
+
+Deployment is a separate manual step:
+
+```powershell
+.\scripts\deploy_azure.ps1                # deploy the 'latest' images
+.\scripts\deploy_azure.ps1 -ImageTag 4f2c1ab   # deploy a specific commit
+```
+
+Deployment is not part of any workflow on purpose. Authenticating a workflow to Azure requires a service principal, which requires an app registration, and the tenant this subscription belongs to sets `allowedToCreateApps` to false. Running deployment against a local `az login` also keeps a long-lived Azure credential out of repository secrets.
+
+The BERT service uses internal ingress and is not reachable from outside the Container Apps environment; only the backend calls it. Note that the backend must address it over `https` — Container Apps ingress redirects plain http, and a redirected POST is downgraded to GET.
+
+Both apps scale to zero, so the first request after an idle period pays a cold start of roughly a minute while the image is pulled and DistilBERT loads.
 
 ## Troubleshooting
 
