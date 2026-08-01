@@ -14,7 +14,12 @@ RUN npm run build
 FROM nginx:1.27-alpine AS runtime
 WORKDIR /usr/share/nginx/html
 
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+# Default keeps docker-compose working against the 'backend' service; a deployed
+# container overrides it with the backend's public URL. The template is rendered
+# by the nginx image's entrypoint at start.
+ENV BACKEND_URL=http://backend:5000
+
+COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist ./
 
 EXPOSE 80

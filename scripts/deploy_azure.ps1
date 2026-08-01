@@ -39,6 +39,7 @@ $ErrorActionPreference = "Stop"
 
 $BertImage = "$Registry/$Owner/mras-bert-service:$ImageTag"
 $BackendImage = "$Registry/$Owner/mras-backend:$ImageTag"
+$FrontendImage = "$Registry/$Owner/mras-frontend:$ImageTag"
 
 function Invoke-Az {
     param([string[]]$Arguments)
@@ -140,10 +141,24 @@ $backendFqdn = Invoke-Az @(
     "containerapp", "show", "--name", "mras-backend", "--resource-group", $ResourceGroup,
     "--query", "properties.configuration.ingress.fqdn", "-o", "tsv"
 )
+Write-Host "  Backend FQDN: $backendFqdn"
+
+# nginx proxies /api to the backend, so the browser only ever talks to this
+# origin and no CORS configuration is needed. Static Web Apps would have been the
+# obvious home for this, but every region it offers is blocked by the region
+# policy on this subscription.
+Set-ContainerApp -Name "mras-frontend" -Image $FrontendImage -TargetPort 80 -Ingress "external" `
+    -EnvVars @("BACKEND_URL=https://$backendFqdn") -Cpu "0.25" -Memory "0.5Gi"
+
+$frontendFqdn = Invoke-Az @(
+    "containerapp", "show", "--name", "mras-frontend", "--resource-group", $ResourceGroup,
+    "--query", "properties.configuration.ingress.fqdn", "-o", "tsv"
+)
 
 Write-Host ""
 Write-Host "Deployed."
-Write-Host "  Backend: https://$backendFqdn"
-Write-Host "  Health : https://$backendFqdn/api/health"
+Write-Host "  App     : https://$frontendFqdn"
+Write-Host "  Backend : https://$backendFqdn"
+Write-Host "  Health  : https://$backendFqdn/api/health"
 Write-Host ""
-Write-Host "Both apps scale to zero; the first request after idling pays a cold start."
+Write-Host "All apps scale to zero; the first request after idling pays a cold start."
