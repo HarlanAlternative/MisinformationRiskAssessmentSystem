@@ -215,12 +215,14 @@ Outputs:
 
 ## Azure and Infra
 
-The deployed architecture runs both services as Azure Container Apps scaled to zero, with images published to GitHub Container Registry:
+The deployed architecture runs all three services as Azure Container Apps scaled to zero, with images published to GitHub Container Registry:
 
-- backend and bert_service on Azure Container Apps, `min-replicas 0`
+- frontend, backend and bert_service on Azure Container Apps, `min-replicas 0`
 - images on `ghcr.io`, built by the workflows in `.github/workflows/`
-- frontend on Azure Static Web Apps
-- persistence falls back to in-memory unless a connection string is configured
+- persistence on Azure SQL, free serverless tier
+- the frontend is the only public entry point; nginx proxies `/api` to the backend, and the BERT service uses internal ingress
+
+The frontend runs as a container rather than on Static Web Apps because Static Web Apps operates only in Central US, East US 2, West US 2, West Europe and East Asia, none of which this subscription's region policy permits. Serving it through nginx turned out to suit the project better anyway: the browser stays on one origin, so no CORS configuration is needed and the backend address is never exposed to it.
 
 This shape was chosen for cost. Azure Container Registry has no free tier, and the free App Service plan cannot host containers at all, so the original ACR plus App Service B1 arrangement carried a standing charge of roughly USD 18 a month. Public images on ghcr.io are free, and Container Apps scaled to zero cost nothing while idle.
 
@@ -228,7 +230,15 @@ This shape was chosen for cost. Azure Container Registry has no free tier, and t
 
 Images build automatically on push. Each workflow fetches the model bundles from the artifact release and verifies them against their manifests, so an image cannot be published with weights that do not match the recorded fingerprint.
 
-Deployment is a separate manual step:
+Infrastructure is provisioned once. The script is idempotent, so re-running it after a partial failure is safe:
+
+```powershell
+.\scripts\provision_azure.ps1
+```
+
+It creates the resource group, the Container Apps environment, and an Azure SQL database on the free serverless tier, then stores the connection string as a Container App secret. The database is set to pause rather than bill when the monthly free allocation runs out, so it cannot quietly consume credit. The generated SQL password is printed once; the backend never needs it again, since it reads the connection string from the secret.
+
+Deployment is a separate step, and rolls out images without touching infrastructure:
 
 ```powershell
 .\scripts\deploy_azure.ps1                # deploy the 'latest' images
