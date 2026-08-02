@@ -218,7 +218,7 @@ Outputs:
 The deployed architecture runs all three services as Azure Container Apps scaled to zero, with images published to GitHub Container Registry:
 
 - frontend, backend and bert_service on Azure Container Apps, `min-replicas 0`
-- images on `ghcr.io`, built by the workflows in `.github/workflows/`
+- images in Azure Container Registry, copied there from `ghcr.io` at deploy time
 - persistence on Azure SQL, free serverless tier
 - the frontend is the only public entry point; nginx proxies `/api` to the backend, and the BERT service uses internal ingress
 
@@ -241,9 +241,14 @@ It creates the resource group, the Container Apps environment, and an Azure SQL 
 Deployment is a separate step, and rolls out images without touching infrastructure:
 
 ```powershell
-.\scripts\deploy_azure.ps1                # deploy the 'latest' images
+.\scripts\deploy_azure.ps1                     # deploy the 'latest' images
 .\scripts\deploy_azure.ps1 -ImageTag 4f2c1ab   # deploy a specific commit
+.\scripts\deploy_azure.ps1 -SkipImport         # redeploy without re-copying images
 ```
+
+The workflows publish to `ghcr.io`, since building in Actions requires no Azure credential, and deployment copies those tags into Azure Container Registry with `az acr import`. That copy runs server side, so images never pass through the machine running the script.
+
+Container Apps authenticates to the registry with admin credentials rather than a managed identity holding `AcrPull`. Creating that role assignment is refused on this subscription, whose `Microsoft.Authorization` endpoint returns `MissingSubscription` even for reads.
 
 Deployment is not part of any workflow on purpose. Authenticating a workflow to Azure requires a service principal, which requires an app registration, and the tenant this subscription belongs to sets `allowedToCreateApps` to false. Running deployment against a local `az login` also keeps a long-lived Azure credential out of repository secrets.
 

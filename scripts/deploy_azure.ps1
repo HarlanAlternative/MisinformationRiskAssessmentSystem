@@ -30,16 +30,25 @@ param(
     [string]$ImageTag = "latest",
     [string]$ResourceGroup = "rg-mras-student",
     [string]$Environment = "mras-env",
-    [string]$Registry = "ghcr.io",
+    [string]$SourceRegistry = "ghcr.io",
     [string]$Owner = "harlanalternative",
+    [string]$Registry = "acrmrasstudent",
+    [switch]$SkipImport,
     [string]$SubscriptionId = "0faf8200-a54e-47ec-bcb8-63fcec991a5a"
 )
 
 $ErrorActionPreference = "Stop"
 
-$BertImage = "$Registry/$Owner/mras-bert-service:$ImageTag"
-$BackendImage = "$Registry/$Owner/mras-backend:$ImageTag"
-$FrontendImage = "$Registry/$Owner/mras-frontend:$ImageTag"
+$RegistryServer = "$Registry.azurecr.io"
+$Repositories = @{
+    "mras-bert"     = "mras-bert-service"
+    "mras-backend"  = "mras-backend"
+    "mras-frontend" = "mras-frontend"
+}
+
+$BertImage = "$RegistryServer/mras-bert-service:$ImageTag"
+$BackendImage = "$RegistryServer/mras-backend:$ImageTag"
+$FrontendImage = "$RegistryServer/mras-frontend:$ImageTag"
 
 function Invoke-Az {
     param([string[]]$Arguments)
@@ -58,7 +67,33 @@ $current = (Invoke-Az @("account", "show", "--query", "name", "-o", "tsv"))
 Write-Host "Deploying into '$current' / $ResourceGroup"
 Write-Host "  BERT service : $BertImage"
 Write-Host "  Backend      : $BackendImage"
+Write-Host "  Frontend     : $FrontendImage"
 Write-Host ""
+
+# The workflows publish to ghcr, because building in Actions needs no Azure
+# credential and none can be issued here. Azure pulls from its own registry, so
+# the tags are copied across first. az acr import runs server side, so the images
+# never travel through this machine.
+if (-not $SkipImport) {
+    foreach ($repository in ($Repositories.Values | Sort-Object -Unique)) {
+        Write-Host "Importing $repository`:$ImageTag into $Registry ..."
+        Invoke-Az @(
+            "acr", "import",
+            "--name", $Registry,
+            "--source", "$SourceRegistry/$Owner/$repository`:$ImageTag",
+            "--image", "$repository`:$ImageTag",
+            "--force"
+        ) | Out-Null
+    }
+    Write-Host ""
+}
+
+# Container Apps authenticates to the registry with admin credentials. A managed
+# identity holding AcrPull would be preferable, but creating that role assignment
+# is refused on this subscription, whose Microsoft.Authorization endpoint returns
+# MissingSubscription even for reads.
+$registryUser = Invoke-Az @("acr", "credential", "show", "--name", $Registry, "--query", "username", "-o", "tsv")
+$registryPassword = Invoke-Az @("acr", "credential", "show", "--name", $Registry, "--query", "passwords[0].value", "-o", "tsv")
 
 function Set-ContainerApp {
     param(
@@ -81,6 +116,18 @@ function Set-ContainerApp {
 
     if ($existing -contains $Name) {
         Write-Host "Updating $Name ..."
+
+        # Set before the image is changed, so a first switch to the registry does
+        # not roll out a revision that cannot pull.
+        Invoke-Az @(
+            "containerapp", "registry", "set",
+            "--name", $Name,
+            "--resource-group", $ResourceGroup,
+            "--server", $RegistryServer,
+            "--username", $registryUser,
+            "--password", $registryPassword
+        ) | Out-Null
+
         $arguments = @(
             "containerapp", "update",
             "--name", $Name,
@@ -106,7 +153,10 @@ function Set-ContainerApp {
             "--cpu", $Cpu,
             "--memory", $Memory,
             "--min-replicas", "0",
-            "--max-replicas", "1"
+            "--max-replicas", "1",
+            "--registry-server", $RegistryServer,
+            "--registry-username", $registryUser,
+            "--registry-password", $registryPassword
         )
         if ($EnvVars.Count -gt 0) {
             $arguments += "--env-vars"

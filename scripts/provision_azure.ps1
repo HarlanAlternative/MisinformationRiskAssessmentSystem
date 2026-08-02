@@ -40,6 +40,7 @@ param(
     [string]$SqlAdminUser = "mrasadmin",
     [string]$SqlAdminPassword = "",
     [string]$BackendApp = "mras-backend",
+    [string]$Registry = "acrmrasstudent",
     [string]$SubscriptionId = "0faf8200-a54e-47ec-bcb8-63fcec991a5a"
 )
 
@@ -68,7 +69,7 @@ Invoke-Az @("account", "set", "--subscription", $SubscriptionId) | Out-Null
 Write-Host "Subscription: $(Invoke-Az @('account','show','--query','name','-o','tsv'))"
 
 # Providers are not registered on a fresh subscription and registration is async.
-foreach ($provider in @("Microsoft.App", "Microsoft.OperationalInsights", "Microsoft.Sql")) {
+foreach ($provider in @("Microsoft.App", "Microsoft.OperationalInsights", "Microsoft.Sql", "Microsoft.ContainerRegistry")) {
     $state = Invoke-Az @("provider", "show", "--namespace", $provider, "--query", "registrationState", "-o", "tsv")
     if ($state -ne "Registered") {
         Write-Host "Registering $provider (this can take a few minutes) ..."
@@ -95,6 +96,28 @@ else {
         "--logs-destination", "none"
     ) | Out-Null
 }
+
+$registries = Invoke-Az @("acr", "list", "--resource-group", $ResourceGroup, "--query", "[].name", "-o", "tsv")
+if ($registries -contains $Registry) {
+    Write-Host "Container registry $Registry already exists."
+}
+else {
+    Write-Host "Creating container registry $Registry ..."
+    Invoke-Az @(
+        "acr", "create",
+        "--name", $Registry,
+        "--resource-group", $ResourceGroup,
+        "--sku", "Basic",
+        "--location", $Location
+    ) | Out-Null
+}
+
+# Admin credentials rather than a managed identity with AcrPull. Granting that
+# role means writing a role assignment, and the Microsoft.Authorization endpoint
+# on this subscription refuses even to list them (MissingSubscription), so the
+# identity route cannot be completed here. The password is held as a Container App
+# secret, which az containerapp registry set creates.
+Invoke-Az @("acr", "update", "--name", $Registry, "--admin-enabled", "true") | Out-Null
 
 # A SQL server name is globally unique, so reuse whatever is already in the group
 # rather than failing on a name that is taken.
